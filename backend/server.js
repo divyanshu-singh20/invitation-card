@@ -14,14 +14,29 @@ const createDefaultAdmin = require('./utils/createDefaultAdmin');
 const app = express();
 
 const localhostOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
-const allowedOrigins = [];
+const allowedOrigins = new Set();
+
+const normalizeOrigin = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  return value.trim().replace(/\/$/, '');
+};
+
+// Safe defaults so production frontend works even when env vars are missing.
+[
+  'https://invitation-card-nu-five.vercel.app',
+  'http://localhost:5173'
+].forEach((origin) => allowedOrigins.add(normalizeOrigin(origin)));
 
 if (process.env.CORS_ORIGINS) {
   const envOrigins = process.env.CORS_ORIGINS
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => normalizeOrigin(origin))
     .filter(Boolean);
-  allowedOrigins.push(...envOrigins);
+  envOrigins.forEach((origin) => allowedOrigins.add(origin));
+}
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.add(normalizeOrigin(process.env.FRONTEND_URL));
 }
 
 const corsOptions = {
@@ -29,7 +44,9 @@ const corsOptions = {
     // Allow server-to-server and same-origin requests that do not send Origin.
     if (!origin) return callback(null, true);
     if (localhostOriginPattern.test(origin)) return callback(null, true);
-    return allowedOrigins.includes(origin)
+
+    const normalizedOrigin = normalizeOrigin(origin);
+    return allowedOrigins.has(normalizedOrigin)
       ? callback(null, true)
       : callback(new Error('Not allowed by CORS'));
   },
