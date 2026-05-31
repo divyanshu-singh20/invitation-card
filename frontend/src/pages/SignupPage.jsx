@@ -57,7 +57,9 @@ const SignupPage = () => {
         setStep(2);
         setResendTimer(60);
         setCanResend(false);
-        setSuccess('OTP sent to your email address!');
+        setSuccess(response.data.otp
+          ? `OTP sent. Dev OTP: ${response.data.otp}`
+          : 'OTP sent to your email address!');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');

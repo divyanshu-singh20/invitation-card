@@ -24,7 +24,9 @@ const SellerForgotPasswordPage = () => {
       const response = await api.post('/sellers/forgot-password/send-otp', { email });
       
       if (response.data.success) {
-        setSuccess('OTP sent to your email!');
+        setSuccess(response.data.otp
+          ? `OTP sent. Dev OTP: ${response.data.otp}`
+          : 'OTP sent to your email!');
         setStep(2);
       }
     } catch (err) {

@@ -99,7 +99,8 @@ router.post('/send-otp', async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'OTP sent to your email address',
-      email: email
+      email: email,
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
     res.status(500).json({
@@ -206,7 +207,8 @@ router.post('/resend-otp', async (req, res) => {
 
     res.json({
       success: true,
-      message: 'New OTP sent to your email'
+      message: 'New OTP sent to your email',
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
     res.status(500).json({
@@ -479,7 +481,8 @@ router.post('/forgot-password/send-otp', async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'OTP sent to your email address'
+      message: 'OTP sent to your email address',
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
     res.status(500).json({

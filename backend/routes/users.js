@@ -9,8 +9,15 @@ const { sendOTPEmail, sendWelcomeEmail } = require('../services/emailService');
 const generateOTP = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
-// Temporary storage (DEV only)
-const pendingRegistrations = new Map();
+const OTP_EXPIRY_MS = 10 * 60 * 1000;
+
+const isOtpExpired = (otpExpiry) => !otpExpiry || new Date() > otpExpiry;
+
+const clearOtpFields = async (user) => {
+  user.otp = undefined;
+  user.otpExpiry = undefined;
+  await user.save();
+};
 
 /* =========================
    SEND OTP
@@ -29,21 +36,26 @@ router.post('/signup/send-otp', async (req, res) => {
     }
 
     const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    pendingRegistrations.set(email, {
-      firstName,
-      email,
-      password: hashedPassword,
-      otp,
-      otpExpiry
-    });
+    const user = existingUser || new User({ email });
+    user.name = firstName;
+    user.password = hashedPassword;
+    user.isVerified = false;
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+
+    await user.save();
 
     await sendOTPEmail(email, otp, firstName);
 
-    res.json({ success: true, message: 'OTP sent to email' });
+    res.json({
+      success: true,
+      message: 'OTP sent to email',
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -55,24 +67,24 @@ router.post('/signup/send-otp', async (req, res) => {
 router.post('/signup/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const data = pendingRegistrations.get(email);
 
-    if (!data) {
-      return res.status(400).json({ success: false, message: 'OTP expired' });
+    const user = await User.findOne({ email });
+
+    if (!user || !user.otp) {
+      return res.status(400).json({ success: false, message: 'OTP expired. Please request a new OTP.' });
     }
 
-    if (data.otp !== otp || new Date() > data.otpExpiry) {
+    if (isOtpExpired(user.otpExpiry)) {
+      await clearOtpFields(user);
+      return res.status(400).json({ success: false, message: 'OTP expired. Please request a new OTP.' });
+    }
+
+    if (String(user.otp) !== String(otp)) {
       return res.status(400).json({ success: false, message: 'Invalid OTP' });
     }
 
-    const user = await User.create({
-      name: data.firstName,
-      email: data.email,
-      password: data.password,
-      isVerified: true
-    });
-
-    pendingRegistrations.delete(email);
+    user.isVerified = true;
+    await clearOtpFields(user);
 
     const token = jwt.sign(
       { userId: user._id },
@@ -105,10 +117,9 @@ router.post('/signup/resend-otp', async (req, res) => {
       });
     }
 
-    // Get pending registration
-    const pendingData = pendingRegistrations.get(email);
-    
-    if (!pendingData) {
+    const user = await User.findOne({ email });
+
+    if (!user || user.isVerified) {
       return res.status(400).json({
         success: false,
         message: 'No pending registration found. Please signup again.'
@@ -117,16 +128,15 @@ router.post('/signup/resend-otp', async (req, res) => {
 
     // Generate new OTP
     const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
 
-    // Update pending data
-    pendingData.otp = otp;
-    pendingData.otpExpiry = otpExpiry;
-    pendingRegistrations.set(email, pendingData);
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+    await user.save();
 
     // Send OTP email
     try {
-      await sendOTPEmail(email, otp, pendingData.firstName);
+      await sendOTPEmail(email, otp, user.name);
     } catch (emailError) {
       return res.status(500).json({
         success: false,
@@ -136,7 +146,8 @@ router.post('/signup/resend-otp', async (req, res) => {
     
     res.status(200).json({
       success: true,
-      message: 'New OTP sent to your email address'
+      message: 'New OTP sent to your email address',
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
     res.status(500).json({
@@ -382,21 +393,11 @@ router.post('/forgot-password/send-otp', async (req, res) => {
 
     // Generate OTP
     const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
 
-    // Store OTP temporarily
-    passwordResetOTPs.set(email, {
-      otp,
-      otpExpiry,
-      createdAt: new Date()
-    });
-
-    // Clean up old OTPs
-    for (const [key, value] of passwordResetOTPs.entries()) {
-      if (new Date() - value.createdAt > 15 * 60 * 1000) {
-        passwordResetOTPs.delete(key);
-      }
-    }
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+    await user.save();
 
     // Send OTP email
     try {
@@ -410,7 +411,8 @@ router.post('/forgot-password/send-otp', async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'OTP sent to your email address'
+      message: 'OTP sent to your email address',
+      otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
     res.status(500).json({
@@ -441,10 +443,9 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
       });
     }
 
-    // Get stored OTP
-    const storedData = passwordResetOTPs.get(email);
-    
-    if (!storedData) {
+    const user = await User.findOne({ email });
+
+    if (!user || !user.otp) {
       return res.status(400).json({
         success: false,
         message: 'No password reset request found. Please request a new OTP.'
@@ -452,8 +453,8 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
     }
 
     // Check OTP expiry
-    if (new Date() > storedData.otpExpiry) {
-      passwordResetOTPs.delete(email);
+    if (isOtpExpired(user.otpExpiry)) {
+      await clearOtpFields(user);
       return res.status(400).json({
         success: false,
         message: 'OTP has expired. Please request a new one.'
@@ -461,19 +462,10 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
     }
 
     // Verify OTP
-    if (storedData.otp !== otp) {
+    if (String(user.otp) !== String(otp)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid OTP. Please try again.'
-      });
-    }
-
-    // Find user
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
       });
     }
 
@@ -483,10 +475,7 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
 
     // Update password
     user.password = hashedPassword;
-    await user.save();
-
-    // Remove OTP from storage
-    passwordResetOTPs.delete(email);
+    await clearOtpFields(user);
 
     res.status(200).json({
       success: true,
