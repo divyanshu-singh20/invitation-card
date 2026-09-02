@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasEmailCredentials = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+const mailTimeoutMs = Number(process.env.MAIL_SEND_TIMEOUT_MS || 15000);
 
 // Create transporter only when SMTP credentials are configured.
 const transporter = hasEmailCredentials
@@ -10,17 +11,90 @@ const transporter = hasEmailCredentials
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-      }
+      },
+      connectionTimeout: mailTimeoutMs,
+      greetingTimeout: mailTimeoutMs,
+      socketTimeout: mailTimeoutMs
     })
   : null;
 
+const EMAIL_ERROR_CODES = {
+  NOT_CONFIGURED: 'SMTP_NOT_CONFIGURED',
+  AUTH_FAILED: 'SMTP_AUTH_FAILED',
+  SEND_TIMEOUT: 'SMTP_SEND_TIMEOUT'
+};
+
+const createEmailError = (code, message) => {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+};
+
+const classifyEmailError = (error) => {
+  const message = String(error?.message || '').toLowerCase();
+  if (error?.code === 'EAUTH' || message.includes('invalid login') || message.includes('badcredentials')) {
+    return createEmailError(
+      EMAIL_ERROR_CODES.AUTH_FAILED,
+      'SMTP authentication failed. Use a valid EMAIL_USER and Gmail App Password in EMAIL_PASS.'
+    );
+  }
+  return error;
+};
+
+const sendMailWithTimeout = (mailOptions) => Promise.race([
+  transporter.sendMail(mailOptions),
+  new Promise((_, reject) => {
+    setTimeout(() => reject(createEmailError(EMAIL_ERROR_CODES.SEND_TIMEOUT, 'Email send timed out.')), mailTimeoutMs);
+  })
+]);
+
+const verifyEmailTransporter = async () => {
+  const summary = {
+    emailUserConfigured: Boolean(process.env.EMAIL_USER),
+    emailPassConfigured: Boolean(process.env.EMAIL_PASS),
+    verified: false,
+    message: ''
+  };
+
+  if (!transporter) {
+    summary.message = 'Email transporter not configured';
+    return summary;
+  }
+
+  try {
+    await transporter.verify();
+    summary.verified = true;
+    summary.message = 'SMTP transporter verified successfully';
+  } catch (error) {
+    const classified = classifyEmailError(error);
+    summary.message = classified?.message || 'SMTP verification failed';
+  }
+
+  return summary;
+};
+
 const sendOrLogDevOtp = async (mailOptions, otpLabel) => {
   if (transporter) {
-    return transporter.sendMail(mailOptions);
+    try {
+      return await sendMailWithTimeout(mailOptions);
+    } catch (error) {
+      const classified = classifyEmailError(error);
+
+      // Development fallback: don't block OTP flows when SMTP is misconfigured.
+      if (!isProduction && classified?.code === EMAIL_ERROR_CODES.AUTH_FAILED) {
+        console.warn(`[DEV OTP] SMTP auth failed, fallback enabled. ${otpLabel}`);
+        return { messageId: `dev-auth-fallback-${Date.now()}` };
+      }
+
+      throw classified;
+    }
   }
 
   if (isProduction) {
-    throw new Error('Email service is not configured. Set EMAIL_USER and EMAIL_PASS.');
+    throw createEmailError(
+      EMAIL_ERROR_CODES.NOT_CONFIGURED,
+      'Email service is not configured. Set EMAIL_USER and EMAIL_PASS.'
+    );
   }
 
   console.warn(`[DEV OTP] ${otpLabel}`);
@@ -62,6 +136,9 @@ const sendWelcomeEmail = async (email, name) => {
 };
 
 module.exports = {
+  EMAIL_ERROR_CODES,
+  hasEmailCredentials,
+  verifyEmailTransporter,
   sendOTPEmail,
   sendWelcomeEmail
 };

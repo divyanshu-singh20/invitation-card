@@ -5,6 +5,7 @@ export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS || 15000),
   headers: {
     'Content-Type': 'application/json'
   }

@@ -3,7 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { sendOTPEmail, sendWelcomeEmail } = require('../services/emailService');
+const { EMAIL_ERROR_CODES, sendOTPEmail, sendWelcomeEmail } = require('../services/emailService');
 
 // Generate OTP
 const generateOTP = () =>
@@ -17,6 +17,49 @@ const clearOtpFields = async (user) => {
   user.otp = undefined;
   user.otpExpiry = undefined;
   await user.save();
+};
+
+const buildOtpErrorResponse = (error) => {
+  if (error?.code === EMAIL_ERROR_CODES.AUTH_FAILED) {
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: 'SMTP authentication failed. Set EMAIL_USER and use Gmail App Password in EMAIL_PASS.',
+        code: EMAIL_ERROR_CODES.AUTH_FAILED
+      }
+    };
+  }
+
+  if (error?.code === EMAIL_ERROR_CODES.NOT_CONFIGURED) {
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: 'SMTP is not configured. Set EMAIL_USER and EMAIL_PASS.',
+        code: EMAIL_ERROR_CODES.NOT_CONFIGURED
+      }
+    };
+  }
+
+  if (error?.code === EMAIL_ERROR_CODES.SEND_TIMEOUT) {
+    return {
+      status: 504,
+      body: {
+        success: false,
+        message: 'Email provider timed out while sending OTP. Please try again.',
+        code: EMAIL_ERROR_CODES.SEND_TIMEOUT
+      }
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      success: false,
+      message: error?.message || 'Unable to send OTP email right now.'
+    }
+  };
 };
 
 /* =========================
@@ -57,7 +100,8 @@ router.post('/signup/send-otp', async (req, res) => {
       otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const { status, body } = buildOtpErrorResponse(err);
+    res.status(status).json(body);
   }
 });
 
@@ -98,7 +142,14 @@ router.post('/signup/verify-otp', async (req, res) => {
       success: true,
       message: 'Account created',
       token,
-      user
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isVerified: user.isVerified,
+        newsletter: user.newsletter,
+        addresses: user.addresses
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -138,10 +189,8 @@ router.post('/signup/resend-otp', async (req, res) => {
     try {
       await sendOTPEmail(email, otp, user.name);
     } catch (emailError) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send OTP email. Please try again.'
-      });
+      const { status, body } = buildOtpErrorResponse(emailError);
+      return res.status(status).json(body);
     }
     
     res.status(200).json({
@@ -150,11 +199,8 @@ router.post('/signup/resend-otp', async (req, res) => {
       otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error resending OTP',
-      error: error.message
-    });
+    const { status, body } = buildOtpErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 
@@ -403,10 +449,8 @@ router.post('/forgot-password/send-otp', async (req, res) => {
     try {
       await sendOTPEmail(email, otp, user.name);
     } catch (emailError) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send OTP email. Please try again.'
-      });
+      const { status, body } = buildOtpErrorResponse(emailError);
+      return res.status(status).json(body);
     }
 
     res.status(200).json({
@@ -415,11 +459,8 @@ router.post('/forgot-password/send-otp', async (req, res) => {
       otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error sending OTP',
-      error: error.message
-    });
+    const { status, body } = buildOtpErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 

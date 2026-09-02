@@ -10,8 +10,30 @@ const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 const chatRoute = require("./routes/chat");
 const createDefaultAdmin = require('./utils/createDefaultAdmin');
+const { verifyEmailTransporter, hasEmailCredentials } = require('./services/emailService');
 
 const app = express();
+
+const logEmailConfigHealth = async () => {
+  console.log(`EMAIL_USER configured: ${Boolean(process.env.EMAIL_USER)}`);
+  console.log(`EMAIL_PASS configured: ${Boolean(process.env.EMAIL_PASS)}`);
+
+  if (!hasEmailCredentials) {
+    console.warn('⚠️ SMTP disabled: EMAIL_USER/EMAIL_PASS missing. Dev OTP fallback will be used.');
+    return;
+  }
+
+  const verifyResult = await verifyEmailTransporter();
+  if (verifyResult.verified) {
+    console.log('✅ SMTP transporter verified successfully');
+  } else {
+    console.warn(`⚠️ SMTP transporter verification failed: ${verifyResult.message}`);
+  }
+};
+
+logEmailConfigHealth().catch((error) => {
+  console.warn(`⚠️ SMTP startup check failed: ${error.message}`);
+});
 
 const localhostOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
 const allowedOrigins = new Set();

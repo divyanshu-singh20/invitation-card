@@ -3,11 +3,54 @@ const router = express.Router();
 const Seller = require('../models/Seller');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { sendOTPEmail } = require('../services/emailService');
+const { EMAIL_ERROR_CODES, sendOTPEmail } = require('../services/emailService');
 
 // Generate OTP
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+const buildOtpErrorResponse = (error) => {
+  if (error?.code === EMAIL_ERROR_CODES.AUTH_FAILED) {
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: 'SMTP authentication failed. Set EMAIL_USER and use Gmail App Password in EMAIL_PASS.',
+        code: EMAIL_ERROR_CODES.AUTH_FAILED
+      }
+    };
+  }
+
+  if (error?.code === EMAIL_ERROR_CODES.NOT_CONFIGURED) {
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: 'SMTP is not configured. Set EMAIL_USER and EMAIL_PASS.',
+        code: EMAIL_ERROR_CODES.NOT_CONFIGURED
+      }
+    };
+  }
+
+  if (error?.code === EMAIL_ERROR_CODES.SEND_TIMEOUT) {
+    return {
+      status: 504,
+      body: {
+        success: false,
+        message: 'Email provider timed out while sending OTP. Please try again.',
+        code: EMAIL_ERROR_CODES.SEND_TIMEOUT
+      }
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      success: false,
+      message: error?.message || 'Unable to send OTP email right now.'
+    }
+  };
 };
 
 // Temporary storage for pending seller registrations
@@ -90,10 +133,8 @@ router.post('/send-otp', async (req, res) => {
     try {
       await sendOTPEmail(email, otp, ownerName);
     } catch (emailError) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send OTP email. Please try again.'
-      });
+      const { status, body } = buildOtpErrorResponse(emailError);
+      return res.status(status).json(body);
     }
 
     res.status(200).json({
@@ -199,10 +240,8 @@ router.post('/resend-otp', async (req, res) => {
     try {
       await sendOTPEmail(email, otp, pendingData.ownerName);
     } catch (emailError) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send OTP email. Please try again.'
-      });
+      const { status, body } = buildOtpErrorResponse(emailError);
+      return res.status(status).json(body);
     }
 
     res.json({
@@ -485,11 +524,8 @@ router.post('/forgot-password/send-otp', async (req, res) => {
       otp: process.env.NODE_ENV === 'production' ? undefined : otp
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error sending OTP',
-      error: error.message
-    });
+    const { status, body } = buildOtpErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 
