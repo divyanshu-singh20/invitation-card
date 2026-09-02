@@ -446,7 +446,7 @@ const SignupPage = () => {
     setLoading(true);
 
     try {
-      // Direct registration call without OTP verification
+      // Direct API call without OTP
       const response = await api.post('/users/signup', {
         firstName,
         lastName,
@@ -455,14 +455,14 @@ const SignupPage = () => {
         newsletter
       });
 
-      if (response.data.success) {
-        // Response mein token hone par local storage mein set karke auto-login kar sakte hain
+      if (response.data.success || response.status === 200 || response.status === 201) {
         if (response.data.token) {
           localStorage.setItem('token', response.data.token);
           localStorage.setItem('user', JSON.stringify(response.data.user));
         }
 
-        setSuccess('Account created successfully! Redirecting...');
+        // Direct success popup/alert message
+        setSuccess('Registered Successfully! Redirecting...');
 
         setTimeout(() => {
           navigate('/');
@@ -475,89 +475,73 @@ const SignupPage = () => {
     }
   };
 
-  const handleSignIn = () => {
-    navigate('/login');
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8 sm:p-10">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              Create Account
-            </h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Create Account</h1>
             <p className="text-gray-500 text-sm">Join Shadi Card for exclusive designs</p>
           </div>
 
           <form onSubmit={handleSignup} className="space-y-5">
+            {/* Error Message Popup */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl text-sm flex items-center gap-2">
-                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {error}
+                <span>⚠️</span>
+                <span>{error}</span>
               </div>
             )}
 
+            {/* Success Message Popup */}
             {success && (
-              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-2xl text-sm flex items-center gap-2">
-                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {success}
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-2xl text-sm flex items-center gap-2 font-medium">
+                <span>✅</span>
+                <span>{success}</span>
               </div>
             )}
 
             <div>
-              <label htmlFor="firstName" className="sr-only">First Name</label>
               <input
-                id="firstName"
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 required
-                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 transition-all duration-200 placeholder-gray-500"
+                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 placeholder-gray-500"
                 placeholder="First Name"
               />
             </div>
 
             <div>
-              <label htmlFor="lastName" className="sr-only">Last Name</label>
               <input
-                id="lastName"
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 required
-                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 transition-all duration-200 placeholder-gray-500"
+                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 placeholder-gray-500"
                 placeholder="Last Name"
               />
             </div>
 
             <div>
-              <label htmlFor="email" className="sr-only">Email</label>
               <input
-                id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 transition-all duration-200 placeholder-gray-500"
+                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 placeholder-gray-500"
                 placeholder="Email"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
               <input
-                id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 transition-all duration-200 placeholder-gray-500"
+                className="w-full px-5 py-4 bg-gray-100 text-gray-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-400 placeholder-gray-500"
                 placeholder="Password (min 6 characters)"
               />
             </div>
@@ -568,7 +552,7 @@ const SignupPage = () => {
                 type="checkbox"
                 checked={newsletter}
                 onChange={(e) => setNewsletter(e.target.checked)}
-                className="w-4 h-4 text-red-500 bg-gray-100 border-gray-300 rounded focus:ring-red-400 focus:ring-2 transition-all duration-200"
+                className="w-4 h-4 text-red-500 rounded border-gray-300 focus:ring-red-400"
               />
               <label htmlFor="newsletter" className="ml-3 text-sm text-gray-700 cursor-pointer">
                 Register to our newsletter
@@ -579,26 +563,16 @@ const SignupPage = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 px-8 rounded-full transition-all duration-300 shadow-lg uppercase tracking-wide disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Creating...
-                  </>
-                ) : (
-                  'Create Account'
-                )}
+                {loading ? 'Creating Account...' : 'Create Account'}
               </button>
 
               <button
                 type="button"
-                onClick={handleSignIn}
+                onClick={() => navigate('/login')}
                 disabled={loading}
-                className="text-red-500 hover:text-red-600 font-medium transition-colors duration-200 whitespace-nowrap uppercase tracking-wide disabled:opacity-50"
+                className="text-red-500 hover:text-red-600 font-medium uppercase tracking-wide"
               >
                 Sign In
               </button>
