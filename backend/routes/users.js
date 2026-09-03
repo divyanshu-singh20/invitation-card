@@ -3,206 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { EMAIL_ERROR_CODES, sendOTPEmail, sendWelcomeEmail } = require('../services/emailService');
-
-// Generate OTP
-const generateOTP = () =>
-  Math.floor(100000 + Math.random() * 900000).toString();
-
-const OTP_EXPIRY_MS = 10 * 60 * 1000;
-
-const isOtpExpired = (otpExpiry) => !otpExpiry || new Date() > otpExpiry;
-
-const clearOtpFields = async (user) => {
-  user.otp = undefined;
-  user.otpExpiry = undefined;
-  await user.save();
-};
-
-const buildOtpErrorResponse = (error) => {
-  if (error?.code === EMAIL_ERROR_CODES.AUTH_FAILED) {
-    return {
-      status: 500,
-      body: {
-        success: false,
-        message: 'SMTP authentication failed. Set EMAIL_USER and use Gmail App Password in EMAIL_PASS.',
-        code: EMAIL_ERROR_CODES.AUTH_FAILED
-      }
-    };
-  }
-
-  if (error?.code === EMAIL_ERROR_CODES.NOT_CONFIGURED) {
-    return {
-      status: 500,
-      body: {
-        success: false,
-        message: 'SMTP is not configured. Set EMAIL_USER and EMAIL_PASS.',
-        code: EMAIL_ERROR_CODES.NOT_CONFIGURED
-      }
-    };
-  }
-
-  if (error?.code === EMAIL_ERROR_CODES.SEND_TIMEOUT) {
-    return {
-      status: 504,
-      body: {
-        success: false,
-        message: 'Email provider timed out while sending OTP. Please try again.',
-        code: EMAIL_ERROR_CODES.SEND_TIMEOUT
-      }
-    };
-  }
-
-  return {
-    status: 500,
-    body: {
-      success: false,
-      message: error?.message || 'Unable to send OTP email right now.'
-    }
-  };
-};
-
-/* =========================
-   SEND OTP
-========================= */
-router.post('/signup/send-otp', async (req, res) => {
-  try {
-    const { firstName, email, password } = req.body;
-
-    if (!firstName || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Missing fields' });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser && existingUser.isVerified) {
-      return res.status(400).json({ success: false, message: 'Email already registered' });
-    }
-
-    const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = existingUser || new User({ email });
-    user.name = firstName;
-    user.password = hashedPassword;
-    user.isVerified = false;
-    user.otp = otp;
-    user.otpExpiry = otpExpiry;
-
-    await user.save();
-
-    await sendOTPEmail(email, otp, firstName);
-
-    res.json({
-      success: true,
-      message: 'OTP sent to email',
-      otp: process.env.NODE_ENV === 'production' ? undefined : otp
-    });
-  } catch (err) {
-    const { status, body } = buildOtpErrorResponse(err);
-    res.status(status).json(body);
-  }
-});
-
-/* =========================
-   VERIFY OTP
-========================= */
-router.post('/signup/verify-otp', async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-
-    const user = await User.findOne({ email });
-
-    if (!user || !user.otp) {
-      return res.status(400).json({ success: false, message: 'OTP expired. Please request a new OTP.' });
-    }
-
-    if (isOtpExpired(user.otpExpiry)) {
-      await clearOtpFields(user);
-      return res.status(400).json({ success: false, message: 'OTP expired. Please request a new OTP.' });
-    }
-
-    if (String(user.otp) !== String(otp)) {
-      return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    }
-
-    user.isVerified = true;
-    await clearOtpFields(user);
-
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    sendWelcomeEmail(user.email, user.name).catch(() => {});
-
-    res.json({
-      success: true,
-      message: 'Account created',
-      token,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        isVerified: user.isVerified,
-        newsletter: user.newsletter,
-        addresses: user.addresses
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// Resend OTP
-router.post('/signup/resend-otp', async (req, res) => {
-  try {
-    const { email } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email'
-      });
-    }
-
-    const user = await User.findOne({ email });
-
-    if (!user || user.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'No pending registration found. Please signup again.'
-      });
-    }
-
-    // Generate new OTP
-    const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
-
-    user.otp = otp;
-    user.otpExpiry = otpExpiry;
-    await user.save();
-
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otp, user.name);
-    } catch (emailError) {
-      const { status, body } = buildOtpErrorResponse(emailError);
-      return res.status(status).json(body);
-    }
-    
-    res.status(200).json({
-      success: true,
-      message: 'New OTP sent to your email address',
-      otp: process.env.NODE_ENV === 'production' ? undefined : otp
-    });
-  } catch (error) {
-    const { status, body } = buildOtpErrorResponse(error);
-    res.status(status).json(body);
-  }
-});
+const { sendWelcomeEmail } = require('../services/emailService');
 
 // Legacy Email/Password Signup (keeping for backward compatibility)
 router.post('/signup', async (req, res) => {
@@ -328,7 +129,7 @@ router.post('/login', async (req, res) => {
 // Get user profile (requires auth)
 router.get('/profile/:userId', async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId).select('-otp -otpExpiry');
+    const user = await User.findById(req.params.userId);
     
     if (!user) {
       return res.status(404).json({
@@ -359,7 +160,7 @@ router.put('/profile/:userId', async (req, res) => {
       req.params.userId,
       { name, email },
       { new: true, runValidators: true }
-    ).select('-otp -otpExpiry');
+    );
     
     if (!user) {
       return res.status(404).json({
@@ -411,65 +212,12 @@ router.post('/address/:userId', async (req, res) => {
   }
 });
 
-// ==================== FORGOT PASSWORD ROUTES ====================
-
-// Temporary storage for password reset OTPs
-const passwordResetOTPs = new Map();
-
-// Route 1: Send OTP for password reset
-router.post('/forgot-password/send-otp', async (req, res) => {
+// ==================== FORGOT PASSWORD ROUTE ====================
+router.post('/forgot-password/reset-password', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, newPassword } = req.body;
     
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email address'
-      });
-    }
-
-    // Check if user exists
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email address'
-      });
-    }
-
-    // Generate OTP
-    const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
-
-    user.otp = otp;
-    user.otpExpiry = otpExpiry;
-    await user.save();
-
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otp, user.name);
-    } catch (emailError) {
-      const { status, body } = buildOtpErrorResponse(emailError);
-      return res.status(status).json(body);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'OTP sent to your email address',
-      otp: process.env.NODE_ENV === 'production' ? undefined : otp
-    });
-  } catch (error) {
-    const { status, body } = buildOtpErrorResponse(error);
-    res.status(status).json(body);
-  }
-});
-
-// Route 2: Reset password with OTP
-router.post('/forgot-password/reset-with-otp', async (req, res) => {
-  try {
-    const { email, otp, newPassword } = req.body;
-    
-    if (!email || !otp || !newPassword) {
+    if (!email || !newPassword) {
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields'
@@ -485,28 +233,10 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-
-    if (!user || !user.otp) {
-      return res.status(400).json({
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: 'No password reset request found. Please request a new OTP.'
-      });
-    }
-
-    // Check OTP expiry
-    if (isOtpExpired(user.otpExpiry)) {
-      await clearOtpFields(user);
-      return res.status(400).json({
-        success: false,
-        message: 'OTP has expired. Please request a new one.'
-      });
-    }
-
-    // Verify OTP
-    if (String(user.otp) !== String(otp)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OTP. Please try again.'
+        message: 'No account found with this email address'
       });
     }
 
@@ -516,7 +246,7 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
 
     // Update password
     user.password = hashedPassword;
-    await clearOtpFields(user);
+    await user.save();
 
     res.status(200).json({
       success: true,
@@ -531,6 +261,6 @@ router.post('/forgot-password/reset-with-otp', async (req, res) => {
   }
 });
 
-// ==================== END FORGOT PASSWORD ROUTES ====================
+// ==================== END FORGOT PASSWORD ROUTE ====================
 
 module.exports = router;

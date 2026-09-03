@@ -79,18 +79,6 @@ export const orderService = {
 };
 
 export const userService = {
-  // Send OTP
-  sendOTP: async (mobile) => {
-    const response = await api.post('/users/send-otp', { mobile });
-    return response.data;
-  },
-  
-  // Verify OTP
-  verifyOTP: async (mobile, otp) => {
-    const response = await api.post('/users/verify-otp', { mobile, otp });
-    return response.data;
-  },
-  
   // Get user profile
   getProfile: async (userId) => {
     const response = await api.get(`/users/profile/${userId}`);

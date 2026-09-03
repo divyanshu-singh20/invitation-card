@@ -73,16 +73,16 @@ const verifyEmailTransporter = async () => {
   return summary;
 };
 
-const sendOrLogDevOtp = async (mailOptions, otpLabel) => {
+const sendOrLogDevEmail = async (mailOptions, emailLabel) => {
   if (transporter) {
     try {
       return await sendMailWithTimeout(mailOptions);
     } catch (error) {
       const classified = classifyEmailError(error);
 
-      // Development fallback: don't block OTP flows when SMTP is misconfigured.
+      // Development fallback: don't block email flows when SMTP is misconfigured.
       if (!isProduction && classified?.code === EMAIL_ERROR_CODES.AUTH_FAILED) {
-        console.warn(`[DEV OTP] SMTP auth failed, fallback enabled. ${otpLabel}`);
+        console.warn(`[DEV EMAIL] SMTP auth failed, fallback enabled. ${emailLabel}`);
         return { messageId: `dev-auth-fallback-${Date.now()}` };
       }
 
@@ -97,26 +97,8 @@ const sendOrLogDevOtp = async (mailOptions, otpLabel) => {
     );
   }
 
-  console.warn(`[DEV OTP] ${otpLabel}`);
+  console.warn(`[DEV EMAIL] ${emailLabel}`);
   return { messageId: `dev-${Date.now()}` };
-};
-
-// Send OTP Email
-const sendOTPEmail = async (email, otp, name) => {
-  const mailOptions = {
-    from: `"Shadi Card" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: '🔐 Verify Your Email - Shadi Card',
-    html: `
-      <h2>Hello ${name || 'User'},</h2>
-      <p>Your OTP is:</p>
-      <h1 style="letter-spacing:6px;">${otp}</h1>
-      <p>This OTP is valid for <b>10 minutes</b>.</p>
-      <p>If you didn’t request this, please ignore.</p>
-    `
-  };
-
-  return sendOrLogDevOtp(mailOptions, `OTP for ${email}: ${otp}`);
 };
 
 // Send Welcome Email
@@ -132,13 +114,12 @@ const sendWelcomeEmail = async (email, name) => {
     `
   };
 
-  return sendOrLogDevOtp(mailOptions, `Welcome email for ${email}`);
+  return sendOrLogDevEmail(mailOptions, `Welcome email for ${email}`);
 };
 
 module.exports = {
   EMAIL_ERROR_CODES,
   hasEmailCredentials,
   verifyEmailTransporter,
-  sendOTPEmail,
   sendWelcomeEmail
 };
