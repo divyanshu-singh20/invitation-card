@@ -19,7 +19,13 @@ async function createDefaultAdmin() {
     // Check if admin already exists
     const existingAdmin = await Admin.findOne({ email: defaultAdmin.email });
     if (existingAdmin) {
+      existingAdmin.name = defaultAdmin.name;
+      existingAdmin.password = defaultAdmin.password;
+      existingAdmin.role = defaultAdmin.role;
+      existingAdmin.isActive = true;
+      await existingAdmin.save();
       console.log('⚠️  Default admin already exists!');
+      console.log('✅ Password reset successfully');
       console.log('\n📧 Email: admin@shadicard.com');
       console.log('🔑 Password: admin@123');
       process.exit(0);

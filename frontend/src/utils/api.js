@@ -35,12 +35,8 @@ export const getImageUrl = (imageUrl) => {
     return imageUrl;
   }
   
-  // If it's a relative URL starting with /uploads
-  if (imageUrl.startsWith('/uploads')) {
-    return `${BACKEND_URL}${imageUrl}`;
-  }
-  
-  return imageUrl;
+  // Resolve relative upload paths against the backend.
+  return `${BACKEND_URL}/${imageUrl.replace(/^\/+/, '')}`;
 };
 
 // Request interceptor to add auth token
