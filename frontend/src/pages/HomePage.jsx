@@ -4,7 +4,7 @@ import HeroCarousel from '../components/HeroCarousel';
 import HomeCategories from '../components/HomeCategories';
 
 import menuData from '../data/menuData';
-import api, { getImageUrl } from '../utils/api';
+import api, { FALLBACK_IMAGE, getImageUrl } from '../utils/api';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -101,7 +101,7 @@ const HomePage = () => {
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                             loading="lazy"
                             onError={(e) => {
-                              e.target.src = 'https://via.placeholder.com/400x300?text=No+Image';
+                              e.target.src = FALLBACK_IMAGE;
                             }}
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-300"></div>
